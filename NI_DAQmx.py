@@ -1,6 +1,6 @@
 #####################################################################
 #                                                                   #
-# /NI_PCIe_6363.py                                                  #
+# /NI__DAQmx.py                                                  #
 #                                                                   #
 # Copyright 2013, Monash University                                 #
 #                                                                   #
@@ -11,7 +11,7 @@
 #                                                                   #
 #####################################################################
 
-from labscript import LabscriptError
+from labscript import LabscriptError, set_passed_properties
 from labscript_devices import labscript_device, BLACS_tab, BLACS_worker, runviewer_parser
 import labscript_devices.NIBoard as parent
 
@@ -21,17 +21,51 @@ import labscript_utils.properties
 
 
 @labscript_device
-class NI_PCIe_6363(parent.NIBoard):
-    description = 'NI-PCIe-6363'
-
-    def __init__(self, name, parent_device, **kwargs):
+class NI_DAQmx(parent.NIBoard):
+            
+    description = 'NI-DAQmx'
+    
+    @set_passed_properties(property_names = {
+        "device_properties":["n_analogs", "n_digitals", "n_analog_ins", "clock_limit"]}
+        )
+    def __init__(self, name, parent_device,
+                 n_analogs=0,
+                 n_digitals=0,
+                 digital_dtype=np.uint32,
+                 n_analog_ins=0,
+                 clock_limit=500e3,
+                 **kwargs):
                      
         parent.NIBoard.__init__(self, name, parent_device, **kwargs)
 
-        self.n_analogs = 4
-        self.n_digitals = 32
-        self.digital_dtype = np.uint32
-        self.n_analog_ins = 32
+        # IBS: Now these are just defined at __init__ time
+        # TODO: move all of this information into __init__ for all the children
+        # of parent.NIboard
+        self.n_analogs = n_analogs
+        self.n_digitals = n_digitals
+        self.digital_dtype = digital_dtype
+        self.n_analog_ins = n_analog_ins
+        self.clock_limit = clock_limit
+        
+        # I think a better model is to innumerate all ports that we could have
+        # self.analog_ports = ["ao0", "a01", "ao2", ...]        
+        # self.digital_ports = ["port0/line0:31" ...] # from which you get the digital_dtype for each port
+        # and the number of ports
+        
+        # PFI ports? 
+        
+        # RTSI Port?
+        
+
+
+
+    def generate_code(self, hdf5_file):
+        parent.NIBoard.generate_code(self, hdf5_file)
+        if len(self.child_devices) % 2:
+            raise LabscriptError('%s %s must have an even numer of analog outputs '%(self.description, self.name) +
+                             'in order to guarantee an even total number of samples, which is a limitation of the DAQmx library. ' +
+                             'Please add a dummy output device or remove an output you\'re not using, so that there are an even number of outputs. Sorry, this is annoying I know :).')
+
 
 import time
 
@@ -40,8 +74,10 @@ from blacs.tab_base_classes import MODE_MANUAL, MODE_TRANSITION_TO_BUFFERED, MOD
 from blacs.device_base_class import DeviceTab
 
 @BLACS_tab
-class NI_PCIe_6363Tab(DeviceTab):
+class NI__DAQmxTab(DeviceTab):
     def initialise_GUI(self):
+        # TODO: pull the following information out of the connection table        
+                
         # Capabilities
         num = {'AO':4, 'DO':32, 'PFI':16}
         
@@ -99,11 +135,11 @@ class NI_PCIe_6363Tab(DeviceTab):
         self.MAX_name = str(self.settings['connection_table'].find_by_name(self.device_name).BLACS_connection)
         
         # Create and set the primary worker
-        self.create_worker("main_worker",NiPCIe6363Worker,{'MAX_name':self.MAX_name, 'limits': [base_min['AO'],base_max['AO']], 'num':num})
+        self.create_worker("main_worker",Ni_DAQmxWorker,{'MAX_name':self.MAX_name, 'limits': [base_min['AO'],base_max['AO']], 'num':num})
         self.primary_worker = "main_worker"
-        self.create_worker("wait_monitor_worker",NiPCIe6363WaitMonitorWorker,{'MAX_name':self.MAX_name})
+        self.create_worker("wait_monitor_worker",Ni_DAQmxWaitMonitorWorker,{'MAX_name':self.MAX_name})
         self.add_secondary_worker("wait_monitor_worker")
-        self.create_worker("acquisition_worker",NiPCIe6363AcquisitionWorker,{'MAX_name':self.MAX_name})
+        self.create_worker("acquisition_worker",Ni_DAQmxAcquisitionWorker,{'MAX_name':self.MAX_name})
         self.add_secondary_worker("acquisition_worker")
 
         # Set the capabilities of this device
@@ -111,7 +147,7 @@ class NI_PCIe_6363Tab(DeviceTab):
         self.supports_smart_programming(False) 
     
 @BLACS_worker
-class NiPCIe6363Worker(Worker):
+class Ni_DAQmxWorker(Worker):
     def init(self):
         exec 'from PyDAQmx import Task' in globals()
         exec 'from PyDAQmx.DAQmxConstants import *' in globals()
@@ -250,8 +286,6 @@ class NiPCIe6363Worker(Worker):
             self.ao_task.StopTask()
             self.ao_task.ClearTask()
                 
-       
-            
         return final_values
         
     def transition_to_manual(self,abort=False):
@@ -286,7 +320,7 @@ class NiPCIe6363Worker(Worker):
         return self.transition_to_manual(True)    
 
         
-class NiPCIe6363AcquisitionWorker(Worker):
+class Ni_DAQmxAcquisitionWorker(Worker):
     def init(self):
         #exec 'import traceback' in globals()
         exec 'from PyDAQmx import Task' in globals()
@@ -596,7 +630,7 @@ class NiPCIe6363AcquisitionWorker(Worker):
     def program_manual(self,values):
         return {}
     
-class NiPCIe6363WaitMonitorWorker(Worker):
+class Ni_DAQmxWaitMonitorWorker(Worker):
     def init(self):
         exec 'import ctypes' in globals()
         exec 'from PyDAQmx import Task' in globals()

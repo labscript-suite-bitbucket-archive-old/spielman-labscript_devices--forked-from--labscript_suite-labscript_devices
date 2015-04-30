@@ -23,11 +23,16 @@ import labscript_utils.properties
 @labscript_device
 class NI_USB_6343(parent.NIBoard):
     description = 'NI-USB-6343'
-    clock_limit = 700e3
-    n_analogs = 4
-    n_digitals = 32
-    n_analog_ins = 32
-    digital_dtype = np.uint32
+
+    def __init__(self, name, parent_device, **kwargs):
+                     
+        parent.NIBoard.__init__(self, name, parent_device, **kwargs)
+
+        self.n_analogs = 4
+        self.n_digitals = 32
+        self.digital_dtype = np.uint32
+        self.n_analog_ins = 32
+        self.clock_limit = 700e3
 
 
 import time
@@ -39,6 +44,7 @@ from blacs.device_base_class import DeviceTab
 @BLACS_tab
 class NI_USB_6343Tab(DeviceTab):
     def initialise_GUI(self):
+
         # Capabilities
         num_AO = 4
         num = {'AO':4, 'DO':32, 'PFI':16}
