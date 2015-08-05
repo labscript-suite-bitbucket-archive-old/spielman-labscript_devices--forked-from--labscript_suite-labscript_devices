@@ -11,13 +11,11 @@
 #                                                                   #
 #####################################################################
 
-from labscript_devices import labscript_device, BLACS_tab, BLACS_worker, runviewer_parser
+from labscript_devices import labscript_device, BLACS_tab, BLACS_worker
 from labscript_devices.PulseBlaster import PulseBlaster
 from labscript import PseudoclockDevice, config
 
 import numpy as np
-
-import time
 
 def check_version(module_name, at_least, less_than, version=None):
 
@@ -120,7 +118,7 @@ class Pulseblaster_No_DDS_Tab(DeviceTab):
         self.primary_worker = "main_worker"
         
         # Set the capabilities of this device
-        self.supports_smart_programming(True) 
+        self.supports_smart_programming(False) 
         
         ####
         #### TODO: FIX
@@ -303,10 +301,10 @@ class PulseblasterNoDDSWorker(Worker):
             pb_start()
         elif self.programming_scheme == 'pb_stop_programming/STOP':
             pb_stop_programming()
-            pb_start()
+            pb_start() # Start program
         else:
             raise ValueError('invalid programming_scheme: %s'%str(self.programming_scheme))
-            
+        
     def transition_to_buffered(self,device_name,h5file,initial_values,fresh):
         self.h5file = h5file
         if self.programming_scheme == 'pb_stop_programming/STOP':
@@ -334,9 +332,7 @@ class PulseblasterNoDDSWorker(Worker):
             
                 self.smart_cache['ready_to_go'] = True
                 self.smart_cache['initial_values'] = initial_values
-                # Line zero is a wait on the final state of the program:
-                pb_inst_pbonly(flags,WAIT,0,100)
-                
+
                 # create initial flags string
                 # NOTE: The spinapi can take a string or integer for flags.
                 # If it is a string: 
@@ -354,6 +350,19 @@ class PulseblasterNoDDSWorker(Worker):
                         initial_flags += '1'
                     else:
                         initial_flags += '0'
+
+                # THE FACT THAT THERE ARE TWO INSTRUCTIONS HERE MATTER BECAUSE
+                # JUMP AND LOOP INSTRUCTIONS NEED TO BRANCH TO SPECFIC POINTS
+                # AND THE COMPILER HAS PLANNED FOR THERE TO BE TWO ADDED
+                # INSTRUCTIONS UP FRONT.
+                
+                if self.programming_scheme == 'pb_start/BRANCH':
+                    # Line zero is a wait on the final state of the program in 'pb_start/BRANCH' mode 
+                    pb_inst_pbonly(flags,WAIT,0,100)
+                else:
+                    # Line zero otherwise just contains the initial flags 
+                    pb_inst_pbonly(initial_flags,CONTINUE,0,100)
+                                        
                 # Line one is a continue with the current front panel values:
                 pb_inst_pbonly(initial_flags, CONTINUE, 0, 100)
                 # Now the rest of the program:
@@ -395,6 +404,7 @@ class PulseblasterNoDDSWorker(Worker):
                 self.waits_pending = False
             except zprocess.TimeoutError:
                 pass
+            
         return pb_read_status(), self.waits_pending
 
     def transition_to_manual(self):
